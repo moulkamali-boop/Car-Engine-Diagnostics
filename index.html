@@ -3697,7 +3697,11 @@ const sensorState = {
 let streams = { audio: null, video: null, audioContext: null, analyser: null };
 
 let finalShown = false;
-let freeRetryUsed = false;
+// retryAvailable: true when the current PAID diagnosis still has its one attached free retry unused.
+// retryInProgress: true while the user is redoing measurements after clicking the free retry
+//                   (so the NEXT verdict they confirm is known to be that free retry, not a new paid one).
+let retryAvailable = false;
+let retryInProgress = false;
 
 // ==================== 9. SHA-256 & CRYPTO ====================
 async function sha256(str) {
@@ -4326,14 +4330,30 @@ function confirmFinalVerdict() {
     const successful = getSuccessfulCount();
 
     if (successful >= 1 && !isAdmin) {
-        if (freeCredits > 0) freeCredits--;
-        else if (paidCredits > 0) paidCredits--;
+        // Safety gate: if this verdict is NOT the already-paid-for free retry,
+        // it must be backed by an actual credit. This stops the "endless free
+        // diagnosis" exploit where a user who never leaves the summary screen
+        // could keep getting full results with zero remaining credits.
+        if (!retryInProgress && getTotalCredits() <= 0) {
+            document.getElementById('purchasePrompt').classList.add('show');
+            showToast('⚠️ ' + t('no_credits'));
+            return;
+        }
+
+        if (retryInProgress) {
+            // This is the one free retry attached to the previous paid diagnosis — no charge.
+            retryInProgress = false;
+        } else {
+            // A brand-new diagnosis — deduct exactly one credit and grant its single free retry.
+            if (freeCredits > 0) freeCredits--;
+            else if (paidCredits > 0) paidCredits--;
+            retryAvailable = true;
+        }
         updateCreditsDisplay();
         saveCredits();
     }
 
     finalShown = true;
-    freeRetryUsed = false;
     renderFinalVerdict();
 }
 
@@ -4408,7 +4428,7 @@ function updateFreeRetryButton() {
     const lbl = document.getElementById('freeRetryLabel');
     if (!finalShown) return;
     const successful = getSuccessfulCount();
-    if (successful >= 1 && !freeRetryUsed) {
+    if (successful >= 1 && retryAvailable) {
         btn.disabled = false;
         lbl.textContent = t('free_retry_label');
         btn.style.background = 'linear-gradient(135deg,#f5b81b,#e67e22)';
@@ -4420,10 +4440,11 @@ function updateFreeRetryButton() {
 }
 
 function freeRetry() {
-    if (freeRetryUsed) return;
+    if (!retryAvailable) return;
     const successful = getSuccessfulCount();
     if (successful === 0) return;
-    freeRetryUsed = true;
+    retryAvailable = false;
+    retryInProgress = true;
 
     for (let i = 1; i <= 3; i++) {
         cleanupStreams(i);
@@ -4452,7 +4473,8 @@ function returnFromVerdict() {
         updateSensorUI(i);
     }
     finalShown = false;
-    freeRetryUsed = false;
+    retryAvailable = false;
+    retryInProgress = false;
     userNote = '';
     document.getElementById('noteTextArea').value = '';
     document.getElementById('noteTextArea').style.display = 'none';
@@ -4476,7 +4498,8 @@ function returnFromDiagnosis() {
         updateSensorUI(i);
     }
     finalShown = false;
-    freeRetryUsed = false;
+    retryAvailable = false;
+    retryInProgress = false;
     userNote = '';
     document.getElementById('noteTextArea').value = '';
     document.getElementById('noteTextArea').style.display = 'none';
@@ -4509,7 +4532,8 @@ function requestStart() {
         updateSensorUI(i);
     }
     finalShown = false;
-    freeRetryUsed = false;
+    retryAvailable = false;
+    retryInProgress = false;
     userNote = '';
     document.getElementById('noteTextArea').value = '';
     document.getElementById('noteTextArea').style.display = 'none';
