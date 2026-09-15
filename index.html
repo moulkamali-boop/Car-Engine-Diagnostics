@@ -4690,6 +4690,19 @@ async function checkAdminPassword() {
 
 // ==================== 25. INIT ====================
 async function init() {
+    // Testing helper: visiting the page with ?reset=1 wipes the locally stored
+    // credit balance so you don't have to dig through browser settings to clear
+    // site data while testing. Safe to leave in — it only ever resets THIS
+    // device's own stored credits back to the 3 free defaults, nothing else.
+    try {
+        if (new URLSearchParams(location.search).get('reset') === '1') {
+            localStorage.removeItem('carEngineCredits');
+            const url = new URL(location.href);
+            url.searchParams.delete('reset');
+            history.replaceState(null, '', url.toString());
+        }
+    } catch (e) {}
+
     let id = localStorage.getItem('carEngineDeviceId');
     if (!id) {
         id = 'CAR-' + Math.random().toString(36).slice(2, 10).toUpperCase();
