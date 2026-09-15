@@ -638,6 +638,7 @@ TRANSLATIONS.ar = {
     sensor_count_0: 'لم يتم أي قياس — لا يمكن التقدير',
     confirm_deduct: 'سيُنزع 1 من رصيدك. يمكنك إعادة مجانية في هذه الجلسة.',
     confirm_no_deduct: 'لم يتم أي قياس. لن يُنزع رصيدك. هل تريد رؤية الخلاصة؟',
+    free_retry_confirmed: 'نتيجة الإعادة المجانية — لم يُخصم أي رصيد',
     no_credit_notice: 'لم يتم أي قياس — رصيدك محفوظ',
     profile_normal: 'طبيعي', profile_weak: 'ضعيف', profile_strong: 'قوي',
     profile_very_strong: 'قوي جداً', profile_irregular: 'غير منتظم',
@@ -773,6 +774,7 @@ TRANSLATIONS.en = {
     sensor_count_0: 'No measurement — Cannot estimate',
     confirm_deduct: '1 credit will be deducted. You can retry once for free in this session.',
     confirm_no_deduct: 'No measurement was taken. Your credit is preserved. Show the verdict?',
+    free_retry_confirmed: 'Free retry result — no credit was deducted',
     no_credit_notice: 'No measurement — Your credit is preserved',
     profile_normal: 'Normal', profile_weak: 'Weak', profile_strong: 'Strong',
     profile_very_strong: 'Very strong', profile_irregular: 'Irregular',
@@ -4305,6 +4307,14 @@ function analyzeEngine() {
 
 // ==================== 20. FINAL VERDICT ====================
 function requestFinalVerdict() {
+    if (retryInProgress) {
+        // This verdict is the already-free retry — it will never be charged,
+        // so don't show a deduction-warning dialog for it at all. Go straight
+        // to the result, exactly like the "free" label promises.
+        confirmFinalVerdict();
+        return;
+    }
+
     const successful = getSuccessfulCount();
 
     if (successful === 0) {
@@ -4328,26 +4338,29 @@ function confirmFinalVerdict() {
     document.getElementById('finalConfirmOverlay').classList.remove('show');
 
     const successful = getSuccessfulCount();
+    // The free retry is consumed the moment its verdict is confirmed — whatever
+    // the outcome — so capture it now and clear the flag immediately. This is
+    // the ONLY place retryInProgress is read for billing purposes, so there is
+    // no code path left where a retry verdict can be shown without this being false.
+    const wasFreeRetry = retryInProgress;
+    retryInProgress = false;
 
     if (successful >= 1 && !isAdmin) {
-        // Safety gate: if this verdict is NOT the already-paid-for free retry,
-        // it must be backed by an actual credit. This stops the "endless free
-        // diagnosis" exploit where a user who never leaves the summary screen
-        // could keep getting full results with zero remaining credits.
-        if (!retryInProgress && getTotalCredits() <= 0) {
-            document.getElementById('purchasePrompt').classList.add('show');
-            showToast('⚠️ ' + t('no_credits'));
-            return;
-        }
-
-        if (retryInProgress) {
-            // This is the one free retry attached to the previous paid diagnosis — no charge.
-            retryInProgress = false;
+        if (wasFreeRetry) {
+            // Already paid for by the original diagnosis — genuinely free, no charge, no warning.
+            showToast('🎁 ' + t('free_retry_confirmed'));
         } else {
-            // A brand-new diagnosis — deduct exactly one credit and grant its single free retry.
+            // Safety gate: a brand-new (non-retry) verdict must be backed by an
+            // actual credit. This stops a user who never leaves the summary
+            // screen from getting endless free results with zero credits left.
+            if (getTotalCredits() <= 0) {
+                document.getElementById('purchasePrompt').classList.add('show');
+                showToast('⚠️ ' + t('no_credits'));
+                return;
+            }
             if (freeCredits > 0) freeCredits--;
             else if (paidCredits > 0) paidCredits--;
-            retryAvailable = true;
+            retryAvailable = true; // grant this new diagnosis its single free retry
         }
         updateCreditsDisplay();
         saveCredits();
