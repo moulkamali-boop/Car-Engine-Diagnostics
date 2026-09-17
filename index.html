@@ -2694,7 +2694,16 @@ function updateDateTime() {
 }
 
 function getTotalCredits() { return isAdmin ? 999 : (freeCredits + paidCredits); }
-function updateCreditsDisplay() { document.getElementById('freeCount').textContent = getTotalCredits(); }
+function updateCreditsDisplay() {
+    const total = getTotalCredits();
+    document.getElementById('freeCount').textContent = total;
+    const prompt = document.getElementById('purchasePrompt');
+    if (!isAdmin && total <= 0) {
+        prompt.classList.add('show');
+    } else {
+        prompt.classList.remove('show');
+    }
+}
 
 async function saveCredits() {
     try {
